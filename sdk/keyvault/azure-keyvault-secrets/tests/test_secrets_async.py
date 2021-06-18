@@ -198,29 +198,29 @@ class KeyVaultSecretTest(SecretsTestCase, KeyVaultTestCase):
                 self._assert_secret_attributes_equal(expected_secret.properties, secret)
         self.assertEqual(len(expected), 0)
 
-    # @all_api_versions()
-    # @client_setup
-    # async def test_backup_restore(self, client, **kwargs):
-    #     secret_name = self.get_resource_name("secbak")
-    #     secret_value = "secVal"
+    @all_api_versions()
+    @client_setup
+    async def test_backup_restore(self, client, **kwargs):
+        secret_name = self.get_resource_name("secbak")
+        secret_value = "secVal"
 
-    #     # create secret
-    #     created_bundle = await client.set_secret(secret_name, secret_value)
+        # create secret
+        created_bundle = await client.set_secret(secret_name, secret_value)
 
-    #     # backup secret
-    #     secret_backup = await client.backup_secret(created_bundle.name)
-    #     self.assertIsNotNone(secret_backup, "secret_backup")
+        # backup secret
+        secret_backup = await client.backup_secret(created_bundle.name)
+        self.assertIsNotNone(secret_backup, "secret_backup")
 
-    #     # delete secret
-    #     await client.delete_secret(created_bundle.name)
+        # delete secret
+        await client.delete_secret(created_bundle.name)
 
-    #     # purge secret
-    #     await client.purge_deleted_secret(created_bundle.name)
+        # purge secret
+        await client.purge_deleted_secret(created_bundle.name)
 
-    #     # restore secret
-    #     restore_function = functools.partial(client.restore_secret_backup, secret_backup)
-    #     restored_secret = await self._poll_until_no_exception(restore_function, expected_exception=ResourceExistsError)
-    #     self._assert_secret_attributes_equal(created_bundle.properties, restored_secret)
+        # restore secret
+        restore_function = functools.partial(client.restore_secret_backup, secret_backup)
+        restored_secret = await self._poll_until_no_exception(restore_function, expected_exception=ResourceExistsError)
+        self._assert_secret_attributes_equal(created_bundle.properties, restored_secret)
 
     @all_api_versions()
     @client_setup

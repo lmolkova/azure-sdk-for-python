@@ -203,29 +203,29 @@ class SecretClientTests(SecretsTestCase, KeyVaultTestCase):
                 expected_secret = expected[deleted_secret.name]
                 self._assert_secret_attributes_equal(expected_secret.properties, deleted_secret.properties)
 
-    # @all_api_versions()
-    # @client_setup
-    # def test_backup_restore(self, client, **kwargs):
-    #     secret_name = self.get_resource_name("secbak")
-    #     secret_value = "secVal"
+    @all_api_versions()
+    @client_setup
+    def test_backup_restore(self, client, **kwargs):
+        secret_name = self.get_resource_name("secbak")
+        secret_value = "secVal"
 
-    #     # create secret
-    #     created_bundle = client.set_secret(secret_name, secret_value)
+        # create secret
+        created_bundle = client.set_secret(secret_name, secret_value)
 
-    #     # backup secret
-    #     secret_backup = client.backup_secret(created_bundle.name)
-    #     self.assertIsNotNone(secret_backup, "secret_backup")
+        # backup secret
+        secret_backup = client.backup_secret(created_bundle.name)
+        self.assertIsNotNone(secret_backup, "secret_backup")
 
-    #     # delete secret
-    #     client.begin_delete_secret(created_bundle.name).wait()
+        # delete secret
+        client.begin_delete_secret(created_bundle.name).wait()
 
-    #     # purge secret
-    #     client.purge_deleted_secret(created_bundle.name)
+        # purge secret
+        client.purge_deleted_secret(created_bundle.name)
 
-    #     # restore secret
-    #     restore_function = functools.partial(client.restore_secret_backup, secret_backup)
-    #     restored_secret = self._poll_until_no_exception(restore_function, ResourceExistsError)
-    #     self._assert_secret_attributes_equal(created_bundle.properties, restored_secret)
+        # restore secret
+        restore_function = functools.partial(client.restore_secret_backup, secret_backup)
+        restored_secret = self._poll_until_no_exception(restore_function, ResourceExistsError)
+        self._assert_secret_attributes_equal(created_bundle.properties, restored_secret)
 
     @all_api_versions()
     @client_setup

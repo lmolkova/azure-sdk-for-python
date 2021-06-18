@@ -485,31 +485,31 @@ class CertificateClientTests(CertificatesTestCase, KeyVaultTestCase):
         pending_version_csr = operation.csr
         self.assertEqual((await client.get_certificate_operation(certificate_name=cert_name)).csr, pending_version_csr)
 
-    # @exclude_2016_10_01()
-    # @client_setup
-    # async def test_backup_restore(self, client, **kwargs):
-    #     cert_name = self.get_resource_name("cert")
-    #     policy = CertificatePolicy.get_default()
-    #     policy._san_user_principal_names = ["john.doe@domain.com"]
+    @exclude_2016_10_01()
+    @client_setup
+    async def test_backup_restore(self, client, **kwargs):
+        cert_name = self.get_resource_name("cert")
+        policy = CertificatePolicy.get_default()
+        policy._san_user_principal_names = ["john.doe@domain.com"]
 
-    #     # create certificate
-    #     await client.create_certificate(certificate_name=cert_name, policy=policy)
+        # create certificate
+        await client.create_certificate(certificate_name=cert_name, policy=policy)
 
-    #     # create a backup
-    #     certificate_backup = await client.backup_certificate(certificate_name=cert_name)
+        # create a backup
+        certificate_backup = await client.backup_certificate(certificate_name=cert_name)
 
-    #     # delete the certificate
-    #     await client.delete_certificate(certificate_name=cert_name)
+        # delete the certificate
+        await client.delete_certificate(certificate_name=cert_name)
 
-    #     # purge the certificate
-    #     await client.purge_deleted_certificate(certificate_name=cert_name)
+        # purge the certificate
+        await client.purge_deleted_certificate(certificate_name=cert_name)
 
-    #     # restore certificate
-    #     restore_function = functools.partial(client.restore_certificate_backup, certificate_backup)
-    #     restored_certificate = await self._poll_until_no_exception(
-    #         restore_function, expected_exception=ResourceExistsError
-    #     )
-    #     self._validate_certificate_bundle(cert=restored_certificate, cert_name=cert_name, cert_policy=policy)
+        # restore certificate
+        restore_function = functools.partial(client.restore_certificate_backup, certificate_backup)
+        restored_certificate = await self._poll_until_no_exception(
+            restore_function, expected_exception=ResourceExistsError
+        )
+        self._validate_certificate_bundle(cert=restored_certificate, cert_name=cert_name, cert_policy=policy)
 
     @all_api_versions()
     @client_setup

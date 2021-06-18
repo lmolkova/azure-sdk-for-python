@@ -194,7 +194,7 @@ class TestExamplesKeyVault(KeysTestCase, KeyVaultTestCase):
         key_client.purge_deleted_key(key_name)
 
         if self.is_live:
-            time.sleep(600)
+            time.sleep(120)
 
         # [START restore_key_backup]
         # restore a key backup

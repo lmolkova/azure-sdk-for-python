@@ -472,29 +472,29 @@ class CertificateClientTests(CertificatesTestCase, KeyVaultTestCase):
         pending_version_csr = client.get_certificate_operation(certificate_name=cert_name).csr
         self.assertEqual(client.get_certificate_operation(certificate_name=cert_name).csr, pending_version_csr)
 
-    # @exclude_2016_10_01()
-    # @client_setup
-    # def test_backup_restore(self, client, **kwargs):
-    #     policy = CertificatePolicy.get_default()
-    #     policy._san_user_principal_names = ["john.doe@domain.com"]
-    #     cert_name = self.get_resource_name("cert")
-    #     # create certificate
-    #     create_certificate_poller = client.begin_create_certificate(certificate_name=cert_name, policy=policy)
-    #     create_certificate_poller.wait()
+    @exclude_2016_10_01()
+    @client_setup
+    def test_backup_restore(self, client, **kwargs):
+        policy = CertificatePolicy.get_default()
+        policy._san_user_principal_names = ["john.doe@domain.com"]
+        cert_name = self.get_resource_name("cert")
+        # create certificate
+        create_certificate_poller = client.begin_create_certificate(certificate_name=cert_name, policy=policy)
+        create_certificate_poller.wait()
 
-    #     # create a backup
-    #     certificate_backup = client.backup_certificate(certificate_name=cert_name)
+        # create a backup
+        certificate_backup = client.backup_certificate(certificate_name=cert_name)
 
-    #     # delete the certificate
-    #     client.begin_delete_certificate(certificate_name=cert_name).wait()
+        # delete the certificate
+        client.begin_delete_certificate(certificate_name=cert_name).wait()
 
-    #     # purge the certificate
-    #     client.purge_deleted_certificate(certificate_name=cert_name)
+        # purge the certificate
+        client.purge_deleted_certificate(certificate_name=cert_name)
 
-    #     # restore certificate
-    #     restore_function = functools.partial(client.restore_certificate_backup, certificate_backup)
-    #     restored_certificate = self._poll_until_no_exception(restore_function, ResourceExistsError)
-    #     self._validate_certificate_bundle(cert=restored_certificate, cert_name=cert_name, cert_policy=policy)
+        # restore certificate
+        restore_function = functools.partial(client.restore_certificate_backup, certificate_backup)
+        restored_certificate = self._poll_until_no_exception(restore_function, ResourceExistsError)
+        self._validate_certificate_bundle(cert=restored_certificate, cert_name=cert_name, cert_policy=policy)
 
     @all_api_versions()
     @client_setup

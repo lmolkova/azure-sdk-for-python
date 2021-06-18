@@ -199,7 +199,7 @@ class TestExamplesKeyVault(KeysTestCase, KeyVaultTestCase):
         await key_client.purge_deleted_key(key_name)
 
         if self.is_live:
-            await asyncio.sleep(600)
+            await asyncio.sleep(120)
 
         # [START restore_key_backup]
         # restores a backup

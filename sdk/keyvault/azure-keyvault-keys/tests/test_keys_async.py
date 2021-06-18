@@ -239,30 +239,30 @@ class KeyVaultKeyTest(KeysTestCase, KeyVaultTestCase):
         public_exponent = byte2int(key.key.e)
         assert public_exponent == 17
 
-    # @all_api_versions()
-    # @client_setup
-    # async def test_backup_restore(self, client, is_hsm, **kwargs):
-    #     self.assertIsNotNone(client)
+    @all_api_versions()
+    @client_setup
+    async def test_backup_restore(self, client, is_hsm, **kwargs):
+        self.assertIsNotNone(client)
 
-    #     key_name = self.get_resource_name("keybak")
+        key_name = self.get_resource_name("keybak")
 
-    #     # create key
-    #     created_bundle = await self._create_rsa_key(client, key_name, hardware_protected=is_hsm)
+        # create key
+        created_bundle = await self._create_rsa_key(client, key_name, hardware_protected=is_hsm)
 
-    #     # backup key
-    #     key_backup = await client.backup_key(created_bundle.name)
-    #     self.assertIsNotNone(key_backup, "key_backup")
+        # backup key
+        key_backup = await client.backup_key(created_bundle.name)
+        self.assertIsNotNone(key_backup, "key_backup")
 
-    #     # delete key
-    #     await client.delete_key(created_bundle.name)
+        # delete key
+        await client.delete_key(created_bundle.name)
 
-    #     # purge key
-    #     await client.purge_deleted_key(created_bundle.name)
+        # purge key
+        await client.purge_deleted_key(created_bundle.name)
 
-    #     # restore key
-    #     restore_function = functools.partial(client.restore_key_backup, key_backup)
-    #     restored_key = await self._poll_until_no_exception(restore_function, expected_exception=ResourceExistsError)
-    #     self._assert_key_attributes_equal(created_bundle.properties, restored_key.properties)
+        # restore key
+        restore_function = functools.partial(client.restore_key_backup, key_backup)
+        restored_key = await self._poll_until_no_exception(restore_function, expected_exception=ResourceExistsError)
+        self._assert_key_attributes_equal(created_bundle.properties, restored_key.properties)
 
     @all_api_versions()
     @client_setup
