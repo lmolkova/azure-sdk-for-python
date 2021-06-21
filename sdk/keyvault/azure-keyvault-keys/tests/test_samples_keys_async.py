@@ -199,7 +199,12 @@ class TestExamplesKeyVault(KeysTestCase, KeyVaultTestCase):
         await key_client.purge_deleted_key(key_name)
 
         if self.is_live:
-            await asyncio.sleep(120)
+            await asyncio.sleep(60)
+            await key_client.create_key("livekvtestpurge1", "RSA")
+            await asyncio.sleep(60)
+            await key_client.create_key("livekvtestpurge2", "RSA")
+            await asyncio.sleep(60)
+            await key_client.create_key("livekvtestpurge3", "RSA")
 
         # [START restore_key_backup]
         # restores a backup

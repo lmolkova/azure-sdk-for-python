@@ -194,7 +194,12 @@ class TestExamplesKeyVault(KeysTestCase, KeyVaultTestCase):
         key_client.purge_deleted_key(key_name)
 
         if self.is_live:
-            time.sleep(120)
+            time.sleep(60)
+            key_client.create_key("livekvtestpurge1", "RSA")
+            time.sleep(60)
+            key_client.create_key("livekvtestpurge2", "RSA")
+            time.sleep(60)
+            key_client.create_key("livekvtestpurge3", "RSA")
 
         # [START restore_key_backup]
         # restore a key backup
