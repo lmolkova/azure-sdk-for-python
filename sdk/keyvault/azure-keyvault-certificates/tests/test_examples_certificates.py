@@ -209,11 +209,11 @@ class TestExamplesKeyVault(CertificatesTestCase, KeyVaultTestCase):
 
         if self.is_live:
             time.sleep(60)
-            certificate_client.create_certificate("livekvtestpurge1", policy=cert_policy)
+            certificate_client.begin_create_certificate("livekvtestpurge1", policy=cert_policy)
             time.sleep(60)
-            certificate_client.create_certificate("livekvtestpurge2", policy=cert_policy)
+            certificate_client.begin_create_certificate("livekvtestpurge2", policy=cert_policy)
             time.sleep(60)
-            certificate_client.create_certificate("livekvtestpurge3", policy=cert_policy)
+            certificate_client.begin_create_certificate("livekvtestpurge3", policy=cert_policy)
 
         # [START restore_certificate]
         # restore a certificate backup
