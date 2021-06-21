@@ -43,7 +43,7 @@ parameters:
     default: false
   - name: TestTimeoutInMinutes
     type: number
-    default: 120
+    default: 300
   - name: Location
     type: string
     default: ''
