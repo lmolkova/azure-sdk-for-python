@@ -32,7 +32,7 @@
         },
         "hsmLocation": {
             "type": "string",
-            "defaultValue": "southafricanorth",
+            "defaultValue": "koreacentral",
             "allowedValues": [
                 "australiacentral",
                 "canadacentral",
