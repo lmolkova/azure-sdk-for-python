@@ -32,7 +32,7 @@
         },
         "hsmLocation": {
             "type": "string",
-            "defaultValue": "switzerlandnorth",
+            "defaultValue": "southafricanorth",
             "allowedValues": [
                 "australiacentral",
                 "canadacentral",
