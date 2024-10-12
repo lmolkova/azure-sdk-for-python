@@ -8,7 +8,8 @@
 
 Follow our quickstart for examples: https://aka.ms/azsdk/python/dpcodegen/python/customize
 """
-import sys, io, logging, os, time
+import json
+import sys, io, functools, logging, os, time
 from io import IOBase
 from typing import List, Iterable, Union, IO, Any, Dict, Optional, overload, TYPE_CHECKING, Iterator, cast
 
@@ -16,7 +17,7 @@ from typing import List, Iterable, Union, IO, Any, Dict, Optional, overload, TYP
 from ._operations import EndpointsOperations as EndpointsOperationsGenerated
 from ._operations import AgentsOperations as AgentsOperationsGenerated
 from ..models._enums import AuthenticationType, EndpointType
-from ..models._models import ConnectionsListSecretsResponse, ConnectionsListResponse
+from ..models._models import ConnectionsListSecretsResponse, ConnectionsListResponse, MessageDeltaChunk, RunStep, RunStepDeltaChunk, ThreadMessage, ThreadRun
 from .._types import AgentsApiResponseFormatOption
 from ..models._patch import EndpointProperties
 from ..models._enums import FilePurpose
@@ -24,6 +25,8 @@ from .._vendor import FileType
 from .. import models as _models
 
 from azure.core.tracing.decorator import distributed_trace
+from azure.core.tracing import AbstractSpan, SpanKind  # type: ignore
+from azure.core.settings import settings
 
 if sys.version_info >= (3, 9):
     from collections.abc import MutableMapping
@@ -352,7 +355,7 @@ class AgentsOperations(AgentsOperationsGenerated):
         :paramtype description: str
         :keyword instructions: The system instructions for the new agent to use. Default value is None.
         :paramtype instructions: str
-        :keyword toolset: The Collection of tools and resources (alternative to `tools` and `tool_resources` 
+        :keyword toolset: The Collection of tools and resources (alternative to `tools` and `tool_resources`
          and adds automatic execution logic for functions). Default value is None.
         :paramtype toolset: ~azure.ai.client.models.ToolSet
         :keyword temperature: What sampling temperature to use, between 0 and 2. Higher values like 0.8
@@ -424,7 +427,7 @@ class AgentsOperations(AgentsOperationsGenerated):
         :param instructions: System instructions for the agent.
         :param tools: List of tools definitions for the agent.
         :param tool_resources: Resources used by the agent's tools.
-        :param toolset: Collection of tools and resources (alternative to `tools` and `tool_resources` 
+        :param toolset: Collection of tools and resources (alternative to `tools` and `tool_resources`
          and adds automatic execution logic for functions).
         :param temperature: Sampling temperature for generating agent responses.
         :param top_p: Nucleus sampling parameter.
@@ -829,51 +832,64 @@ class AgentsOperations(AgentsOperationsGenerated):
         :rtype: ~azure.ai.client.models.AgentRunStream
         :raises ~azure.core.exceptions.HttpResponseError:
         """
-        # Create and initiate the run with additional parameters
-        run = self.create_run(
-            thread_id=thread_id,
-            assistant_id=assistant_id,
-            model=model,
-            instructions=instructions,
-            additional_instructions=additional_instructions,
-            additional_messages=additional_messages,
-            tools=tools,
-            temperature=temperature,
-            top_p=top_p,
-            max_prompt_tokens=max_prompt_tokens,
-            max_completion_tokens=max_completion_tokens,
-            truncation_strategy=truncation_strategy,
-            tool_choice=tool_choice,
-            response_format=response_format,
-            metadata=metadata,
-            **kwargs,
-        )
 
-        # Monitor and process the run status
-        while run.status in ["queued", "in_progress", "requires_action"]:
-            time.sleep(sleep_interval)
-            run = self.get_run(thread_id=thread_id, run_id=run.id)
+        # TODO: will it be closed when scope ends? We need to keep it alive for streaming
+        with _start_run_span("thread_run", thread_id, assistant_id, model, instructions, additional_instructions,
+                            temperature, top_p, max_prompt_tokens, max_completion_tokens) as span:
 
-            if run.status == "requires_action" and isinstance(run.required_action, _models.SubmitToolOutputsAction):
-                tool_calls = run.required_action.submit_tool_outputs.tool_calls
-                if not tool_calls:
-                    logging.warning("No tool calls provided - cancelling run")
-                    self.cancel_run(thread_id=thread_id, run_id=run.id)
-                    break
+            if span is not None:
+                event_handler = EventHandlerWrapper(event_handler, span)
 
-                toolset = self.get_toolset()
-                if toolset:
-                    tool_outputs = toolset.execute_tool_calls(tool_calls)
-                else:
-                    raise ValueError("Toolset is not available in the client.")
+            # Create and initiate the run with additional parameters
+            run = self.create_run(
+                thread_id=thread_id,
+                assistant_id=assistant_id,
+                model=model,
+                instructions=instructions,
+                additional_instructions=additional_instructions,
+                additional_messages=additional_messages,
+                tools=tools,
+                temperature=temperature,
+                top_p=top_p,
+                max_prompt_tokens=max_prompt_tokens,
+                max_completion_tokens=max_completion_tokens,
+                truncation_strategy=truncation_strategy,
+                tool_choice=tool_choice,
+                response_format=response_format,
+                metadata=metadata,
+                **kwargs,
+            )
 
-                logging.info("Tool outputs: %s", tool_outputs)
-                if tool_outputs:
-                    self.submit_tool_outputs_to_run(thread_id=thread_id, run_id=run.id, tool_outputs=tool_outputs)
+            # Monitor and process the run status
+            while run.status in ["queued", "in_progress", "requires_action"]:
+                time.sleep(sleep_interval)
+                run = self.get_run(thread_id=thread_id, run_id=run.id)
 
-            logging.info("Current run status: %s", run.status)
+                if run.status == "requires_action" and isinstance(run.required_action, _models.SubmitToolOutputsAction):
+                    tool_calls = run.required_action.submit_tool_outputs.tool_calls
+                    if not tool_calls:
+                        logging.warning("No tool calls provided - cancelling run")
+                        self.cancel_run(thread_id=thread_id, run_id=run.id)
+                        break
 
-        return run
+                    toolset = self.get_toolset()
+                    if toolset:
+                        tool_outputs = toolset.execute_tool_calls(tool_calls)
+                    else:
+                        raise ValueError("Toolset is not available in the client.")
+
+                    logging.info("Tool outputs: %s", tool_outputs)
+                    if tool_outputs:
+                        for tool_output in tool_outputs:
+                            # TODO if content enabled
+                            span.add_event("gen_ai.tool.message", {"gen_ai.event.content": json.dumps({"content": tool_output["output"], "id": tool_output["tool_call_id"]})} )
+
+                        self.submit_tool_outputs_to_run(thread_id=thread_id, run_id=run.id, tool_outputs=tool_outputs)
+
+                logging.info("Current run status: %s", run.status)
+
+            _set_end_run(span, run)
+            return run
 
     @overload
     def create_stream(
@@ -1398,7 +1414,7 @@ class AgentsOperations(AgentsOperationsGenerated):
         response_iterator: Iterator[bytes] = cast(Iterator[bytes], response)
 
         return _models.AgentRunStream(response_iterator, self._handle_submit_tool_outputs, event_handler)
-    
+
     def _handle_submit_tool_outputs(self, run: _models.ThreadRun, event_handler: Optional[_models.AgentEventHandler] = None) -> None:
         if isinstance(run.required_action, _models.SubmitToolOutputsAction):
             tool_calls = run.required_action.submit_tool_outputs.tool_calls
@@ -1412,16 +1428,16 @@ class AgentsOperations(AgentsOperationsGenerated):
             else:
                 logger.warning("Toolset is not available in the client.")
                 return
-            
+
             logger.info(f"Tool outputs: {tool_outputs}")
             if tool_outputs:
                 with self.submit_tool_outputs_to_stream(
-                    thread_id=run.thread_id, 
-                    run_id=run.id, 
-                    tool_outputs=tool_outputs, 
+                    thread_id=run.thread_id,
+                    run_id=run.id,
+                    tool_outputs=tool_outputs,
                     event_handler=event_handler
             ) as stream:
-                    stream.until_done()    
+                    stream.until_done()
 
     @overload
     def upload_file(self, body: JSON, **kwargs: Any) -> _models.OpenAIFile:
@@ -1786,3 +1802,130 @@ def patch_sdk():
     you can't accomplish using the techniques described in
     https://aka.ms/azsdk/python/dpcodegen/python/customize
     """
+
+
+def _start_run_span(
+    operation_name,
+    thread_id,
+    assistant_id,
+    model,
+    instructions,
+    additional_instructions,
+    additional_messages,
+    temperature,
+    top_p,
+    max_prompt_tokens,
+    max_completion_tokens,
+):
+    span_impl_type = settings.tracing_implementation()
+    if span_impl_type is None:
+        return None
+
+    span = span_impl_type(name=operation_name, kind=SpanKind.CLIENT)
+    _set_run_start_attributes(span, operation_name, assistant_id, thread_id, model, temperature, top_p, max_prompt_tokens, max_completion_tokens)
+    _add_instructions_event(span, instructions, additional_instructions)
+    if additional_messages:
+        for message in additional_messages:
+            _add_message_event(span, message)
+    return span
+
+def _set_end_run(span, run):
+    span.set_attribute("gen_ai.thread.run.status", run.status)
+    if run.usage:
+        span.set_attribute("gen_ai.response.input_tokens", run.usage.prompt_tokens)
+        span.set_attribute("gen_ai.response.output_tokens", run.usage.completion_tokens)
+
+def _set_run_start_attributes(span, operation_name, thread_id, agent_id, model, temperature, top_p, max_prompt_tokens, max_completion_tokens):
+    if thread_id:
+        span.add_attribute("gen_ai.thread.id", thread_id)
+
+    if agent_id:
+        span.add_attribute("gen_ai.agent.id", agent_id)
+
+    if model:
+        span.add_attribute("gen_ai.request.model", model)
+
+    if operation_name:
+        span.add_attribute("gen_ai.operation.name", operation_name)
+
+    if temperature:
+        span.add_attribute("gen_ai.request.temperature", temperature)
+
+    if top_p:
+        span.add_attribute("gen_ai.request.top_p", top_p)
+
+    if max_prompt_tokens:
+        span.add_attribute("gen_ai.request.max_input_tokens", max_prompt_tokens)
+
+    if max_completion_tokens:
+        span.add_attribute("gen_ai.request.max_output_tokens", max_completion_tokens)
+
+    span.add_attribute("gen_ai.system", "azure.ai.inference")
+    span.add_attribute("server.address", "TODO")
+
+def _add_instructions_event(span, instructions: str, additional_instructions: str):
+    attributes = {
+        "gen_ai.system": "azure.ai.inference",
+        "gen_ai.event.content": {"content", instructions + ", " + additional_instructions}, # TODO
+    }
+    span.add_event(name=f"gen_ai.system.message", attributes=attributes)
+
+def _add_message_event(span, message: _models.ThreadMessage):
+    # TODO if content enabled and document new attributes
+    event_body = {"content": message.content, "attachments": message.attachments}
+    # TODO update attributes in semconv
+    attributes = {
+        "gen_ai.system": "azure.ai.inference",
+        "gen_ai.message.id": message.id,
+        "gen_ai.message.status": message.status,
+        "gen_ai.thread.id": message.thread_id,
+        "gen_ai.agent.id": message.agent_id,
+        "gen_ai.thread.run.id": message.run_id,
+        "gen_ai.event.content": json.dumps(event_body)
+    }
+    span.add_event(name=f"gen_ai.{message.role}.message", attributes=attributes)
+
+class EventHandlerWrapper(_models.AgentEventHandler):
+    def __init__(self, inner_handler, span):
+        super().__init__()
+        self.span = span
+        self.inner_handler = inner_handler
+
+    def on_message_delta(self, delta: "MessageDeltaChunk") -> None:
+        if self.inner_handler:
+            self.inner_handler.on_message_delta(delta)
+
+    def on_thread_message(self, message: "ThreadMessage") -> None:
+        if self.inner_handler:
+            self.inner_handler.on_thread_message(message)
+        _add_message_event(self.span, message)
+
+    def on_thread_run(self, run: "ThreadRun") -> None:
+        if self.inner_handler:
+            self.inner_handler.on_thread_run(run)
+        # TODO: is it possible that it's called before run has ended?
+        # TODO: make use of last error?
+        _set_end_run(self.span, run)
+
+    def on_run_step(self, step: "RunStep") -> None:
+        if self.inner_handler:
+            self.inner_handler.on_run_step(step)
+
+    def on_run_step_delta(self, delta: "RunStepDeltaChunk") -> None:
+        if self.inner_handler:
+            self.inner_handler.on_run_step_delta(delta)
+
+    def on_error(self, data: str) -> None:
+        if self.inner_handler:
+            self.inner_handler.on_error(data)
+        # TODO how can we get error type or any other useful information?
+        self.span.__exit__("TODO")
+
+    def on_done(self) -> None:
+        if self.inner_handler:
+            self.inner_handler.on_done()
+        self.span.end()
+
+    def on_unhandled_event(self, event_type: str, event_data: Any) -> None:
+        if self.inner_handler:
+            self.inner_handler.on_unhandled_event(event_type, event_data)

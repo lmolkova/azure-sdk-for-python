@@ -479,6 +479,7 @@ class ToolSet:
             try:
                 if tool_call.type == "function":
                     tool = self.get_tool(FunctionTool)
+                    # TODO: instrument!!!!
                     output = tool.execute(tool_call)
                     tool_output = {
                         "tool_call_id": tool_call.id,
