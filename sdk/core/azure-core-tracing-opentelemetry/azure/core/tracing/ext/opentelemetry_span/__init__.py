@@ -18,10 +18,11 @@ from opentelemetry.propagate import extract, inject  # type: ignore[attr-defined
 from opentelemetry.trace.propagation import get_current_span as get_span_from_context  # type: ignore[attr-defined]
 
 # TODO: Fix import of this private attribute once the location of the suppress instrumentation key is defined.
-try:
-    from opentelemetry.context import _SUPPRESS_HTTP_INSTRUMENTATION_KEY  # type: ignore[attr-defined]
-except ImportError:
-    _SUPPRESS_HTTP_INSTRUMENTATION_KEY = "suppress_http_instrumentation"
+# try:
+#    from opentelemetry.context import _SUPPRESS_HTTP_INSTRUMENTATION_KEY  # type: ignore[attr-defined]
+#except ImportError:
+#    _SUPPRESS_HTTP_INSTRUMENTATION_KEY = "suppress_http_instrumentation"
+_SUPPRESS_HTTP_INSTRUMENTATION_KEY = "dummy"
 
 from azure.core.tracing import SpanKind, HttpSpanMixin  # type: ignore[attr-defined] # pylint: disable=no-name-in-module
 

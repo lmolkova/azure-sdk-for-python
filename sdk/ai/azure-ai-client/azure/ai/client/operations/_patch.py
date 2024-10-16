@@ -25,8 +25,8 @@ from .._vendor import FileType
 from .. import models as _models
 
 from azure.core.tracing.decorator import distributed_trace
-from azure.core.tracing import AbstractSpan, SpanKind  # type: ignore
-from azure.core.settings import settings
+from azure.core.tracing import SpanKind  # type: ignore
+from azure.core.settings import settings  # type: ignore
 
 if sys.version_info >= (3, 9):
     from collections.abc import MutableMapping
@@ -736,7 +736,6 @@ class AgentsOperations(AgentsOperationsGenerated):
         # If streaming is enabled, return the custom stream object
         return response
 
-    @distributed_trace
     def create_and_process_run(
         self,
         thread_id: str,
@@ -1805,17 +1804,17 @@ def patch_sdk():
 
 
 def _start_run_span(
-    operation_name,
-    thread_id,
-    assistant_id,
-    model,
-    instructions,
-    additional_instructions,
+    operation_name: str,
+    thread_id: str,
+    assistant_id: str,
+    model: str,
+    instructions: str,
+    additional_instructions: str,
     additional_messages,
-    temperature,
-    top_p,
-    max_prompt_tokens,
-    max_completion_tokens,
+    temperature: float,
+    top_p: float,
+    max_prompt_tokens: int,
+    max_completion_tokens: int
 ):
     span_impl_type = settings.tracing_implementation()
     if span_impl_type is None:
@@ -1824,6 +1823,8 @@ def _start_run_span(
     span = span_impl_type(name=operation_name, kind=SpanKind.CLIENT)
     _set_run_start_attributes(span, operation_name, assistant_id, thread_id, model, temperature, top_p, max_prompt_tokens, max_completion_tokens)
     _add_instructions_event(span, instructions, additional_instructions)
+
+
     if additional_messages:
         for message in additional_messages:
             _add_message_event(span, message)
@@ -1872,14 +1873,14 @@ def _add_instructions_event(span, instructions: str, additional_instructions: st
 
 def _add_message_event(span, message: _models.ThreadMessage):
     # TODO if content enabled and document new attributes
-    event_body = {"content": message.content, "attachments": message.attachments}
+    event_body = {"content": message.content, "attachments": message.attachments, "details": message.incomplete_details}
     # TODO update attributes in semconv
     attributes = {
         "gen_ai.system": "azure.ai.inference",
         "gen_ai.message.id": message.id,
         "gen_ai.message.status": message.status,
         "gen_ai.thread.id": message.thread_id,
-        "gen_ai.agent.id": message.agent_id,
+        "gen_ai.agent.id": message.assistant_id,
         "gen_ai.thread.run.id": message.run_id,
         "gen_ai.event.content": json.dumps(event_body)
     }
@@ -1898,7 +1899,8 @@ class EventHandlerWrapper(_models.AgentEventHandler):
     def on_thread_message(self, message: "ThreadMessage") -> None:
         if self.inner_handler:
             self.inner_handler.on_thread_message(message)
-        _add_message_event(self.span, message)
+        if message.status == "completed" or message.status == "incomplete":
+            _add_message_event(self.span, message)
 
     def on_thread_run(self, run: "ThreadRun") -> None:
         if self.inner_handler:
