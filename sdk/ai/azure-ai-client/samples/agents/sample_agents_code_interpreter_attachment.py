@@ -27,6 +27,7 @@ from azure.ai.client.models import CodeInterpreterTool
 from azure.ai.client.models import FilePurpose
 from azure.ai.client.models import CodeInterpreterToolDefinition, MessageAttachment
 from azure.identity import DefaultAzureCredential
+from samples.tracing_helpers import configure_tracing
 
 
 # Create an Azure AI Client from a connection string, copied from your AI Studio project.
@@ -50,40 +51,44 @@ ai_client = AzureAIClient(
 )
 """
 
-with ai_client:
-    # upload a file and wait for it to be processed
-    file = ai_client.agents.upload_file_and_poll(file_path="product_info_1.md", purpose=FilePurpose.AGENTS)
-    print(f"Uploaded file, file ID: {file.id}")
-        
-    code_interpreter = CodeInterpreterTool()
-    code_interpreter.add_file(file.id)
-    
-    # notices that CodeInterpreterToolDefinition as tool must be added or the assistant unable to view the file
-    agent = ai_client.agents.create_agent(
-        model="gpt-4-1106-preview", 
-        name="my-assistant", 
-        instructions="You are helpful assistant", 
-        tools=[CodeInterpreterToolDefinition()]
-    )
-    print(f"Created agent, agent ID: {agent.id}")
+scenario = os.path.basename(__file__)
+tracer = configure_tracing("agent-samples").get_tracer(scenario)
 
-    thread = ai_client.agents.create_thread()
-    print(f"Created thread, thread ID: {thread.id}")    
+with tracer.start_as_current_span(scenario):
+    with ai_client:
+        # upload a file and wait for it to be processed
+        file = ai_client.agents.upload_file_and_poll(file_path="product_info_1.md", purpose=FilePurpose.AGENTS)
+        print(f"Uploaded file, file ID: {file.id}")
 
-    # create a message with the attachment
-    attachment = MessageAttachment(file_id=file.id, tools=code_interpreter.definitions)
-    message = ai_client.agents.create_message(thread_id=thread.id, role="user", content="What does the attachment say?", attachments=[attachment])
-    print(f"Created message, message ID: {message.id}")
+        code_interpreter = CodeInterpreterTool()
+        code_interpreter.add_file(file.id)
 
-    run = ai_client.agents.create_and_process_run(thread_id=thread.id, assistant_id=agent.id)
-    print(f"Created run, run ID: {run.id}")
-    
-    ai_client.agents.delete_file(file.id)
-    print("Deleted file")
+        # notices that CodeInterpreterToolDefinition as tool must be added or the assistant unable to view the file
+        agent = ai_client.agents.create_agent(
+            model="gpt-4-1106-preview",
+            name="my-assistant",
+            instructions="You are helpful assistant",
+            tools=[CodeInterpreterToolDefinition()]
+        )
+        print(f"Created agent, agent ID: {agent.id}")
 
-    ai_client.agents.delete_agent(agent.id)
-    print("Deleted agent")
+        thread = ai_client.agents.create_thread()
+        print(f"Created thread, thread ID: {thread.id}")
 
-    messages = ai_client.agents.list_messages(thread_id=thread.id)
-    print(f"Messages: {messages}")
+        # create a message with the attachment
+        attachment = MessageAttachment(file_id=file.id, tools=code_interpreter.definitions)
+        message = ai_client.agents.create_message(thread_id=thread.id, role="user", content="What does the attachment say?", attachments=[attachment])
+        print(f"Created message, message ID: {message.id}")
+
+        run = ai_client.agents.create_and_process_run(thread_id=thread.id, assistant_id=agent.id)
+        print(f"Created run, run ID: {run.id}")
+
+        ai_client.agents.delete_file(file.id)
+        print("Deleted file")
+
+        ai_client.agents.delete_agent(agent.id)
+        print("Deleted agent")
+
+        messages = ai_client.agents.list_messages(thread_id=thread.id)
+        print(f"Messages: {messages}")
 

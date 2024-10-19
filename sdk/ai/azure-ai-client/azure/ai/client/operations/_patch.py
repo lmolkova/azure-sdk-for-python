@@ -9,24 +9,23 @@
 Follow our quickstart for examples: https://aka.ms/azsdk/python/dpcodegen/python/customize
 """
 import json
-import sys, io, functools, logging, os, time
+import sys, io, logging, os, time
 from io import IOBase
 from typing import List, Iterable, Union, IO, Any, Dict, Optional, overload, TYPE_CHECKING, Iterator, cast
+
+from azure.ai.client._instrumentation._agent_instrumentation import _GEN_AI_AGENT_ID, _OperationName, set_end_run, start_create_agent_span, start_thread_run_span, wrap_handler
 
 # from zoneinfo import ZoneInfo
 from ._operations import EndpointsOperations as EndpointsOperationsGenerated
 from ._operations import AgentsOperations as AgentsOperationsGenerated
 from ..models._enums import AuthenticationType, EndpointType
-from ..models._models import ConnectionsListSecretsResponse, ConnectionsListResponse, MessageDeltaChunk, RunStep, RunStepDeltaChunk, ThreadMessage, ThreadRun
-from .._types import AgentsApiResponseFormatOption
+from ..models._models import ConnectionsListSecretsResponse, ConnectionsListResponse
 from ..models._patch import EndpointProperties
 from ..models._enums import FilePurpose
 from .._vendor import FileType
 from .. import models as _models
 
 from azure.core.tracing.decorator import distributed_trace
-from azure.core.tracing import SpanKind  # type: ignore
-from azure.core.settings import settings  # type: ignore
 
 if sys.version_info >= (3, 9):
     from collections.abc import MutableMapping
@@ -398,7 +397,6 @@ class AgentsOperations(AgentsOperationsGenerated):
         :raises ~azure.core.exceptions.HttpResponseError:
         """
 
-    @distributed_trace
     def create_agent(
         self,
         body: Union[JSON, IO[bytes]] = _Unset,
@@ -438,29 +436,47 @@ class AgentsOperations(AgentsOperationsGenerated):
         :return: An Agent object.
         :raises: HttpResponseError for HTTP errors.
         """
-        if body is not _Unset:
-            if isinstance(body, IOBase):
-                return super().create_agent(body=body, content_type=content_type, **kwargs)
-            return super().create_agent(body=body, **kwargs)
 
-        if toolset is not None:
-            self._toolset = toolset
-            tools = toolset.definitions
-            tool_resources = toolset.resources
-
-        return super().create_agent(
-            model=model,
+        with start_create_agent_span(
+            self._config,
             name=name,
+            model=model,
             description=description,
             instructions=instructions,
             tools=tools,
             tool_resources=tool_resources,
+            toolset=toolset,
             temperature=temperature,
             top_p=top_p,
-            response_format=response_format,
-            metadata=metadata,
-            **kwargs,
-        )
+            response_format=response_format) as span:
+            if body is not _Unset:
+                if isinstance(body, IOBase):
+                    return super().create_agent(body=body, content_type=content_type, **kwargs)
+                return super().create_agent(body=body, **kwargs)
+
+            if toolset is not None:
+                self._toolset = toolset
+                tools = toolset.definitions
+                tool_resources = toolset.resources
+
+            agent = super().create_agent(
+                model=model,
+                name=name,
+                description=description,
+                instructions=instructions,
+                tools=tools,
+                tool_resources=tool_resources,
+                temperature=temperature,
+                top_p=top_p,
+                response_format=response_format,
+                metadata=metadata,
+                **kwargs,
+            )
+
+            if span:
+                span.add_attribute(_GEN_AI_AGENT_ID, agent.id)
+
+            return agent
 
     def get_toolset(self) -> Optional[_models.ToolSet]:
         """
@@ -605,7 +621,6 @@ class AgentsOperations(AgentsOperationsGenerated):
         :raises ~azure.core.exceptions.HttpResponseError:
         """
 
-    @distributed_trace
     def create_run(
         self,
         thread_id: str,
@@ -700,41 +715,59 @@ class AgentsOperations(AgentsOperationsGenerated):
         :raises ~azure.core.exceptions.HttpResponseError:
         """
 
-        if isinstance(body, dict):  # Handle overload with JSON body.
-            content_type = kwargs.get("content_type", "application/json")
-            response = super().create_run(thread_id, body, content_type=content_type, **kwargs)
+        with start_thread_run_span(_OperationName.CREATE_THREAD_RUN,
+            self._config,
+            thread_id,
+            assistant_id,
+            model=model,
+            instructions=instructions,
+            additional_instructions=additional_instructions,
+            additional_messages=additional_messages,
+            temperature=temperature,
+            tools=tools,
+            top_p=top_p,
+            max_prompt_tokens=max_prompt_tokens,
+            max_completion_tokens=max_completion_tokens,
+            response_format=response_format) as span:
 
-        elif assistant_id is not _Unset:  # Handle overload with keyword arguments.
-            response = super().create_run(
-                thread_id,
-                assistant_id=assistant_id,
-                model=model,
-                instructions=instructions,
-                additional_instructions=additional_instructions,
-                additional_messages=additional_messages,
-                tools=tools,
-                stream_parameter=False,
-                stream=False,
-                temperature=temperature,
-                top_p=top_p,
-                max_prompt_tokens=max_prompt_tokens,
-                max_completion_tokens=max_completion_tokens,
-                truncation_strategy=truncation_strategy,
-                tool_choice=tool_choice,
-                response_format=response_format,
-                metadata=metadata,
-                **kwargs,
-            )
+            if isinstance(body, dict):  # Handle overload with JSON body.
+                content_type = kwargs.get("content_type", "application/json")
+                response = super().create_run(thread_id, body, content_type=content_type, **kwargs)
 
-        elif isinstance(body, io.IOBase):  # Handle overload with binary body.
-            content_type = kwargs.get("content_type", "application/json")
-            response = super().create_run(thread_id, body, content_type=content_type, **kwargs)
+            elif assistant_id is not _Unset:  # Handle overload with keyword arguments.
+                response = super().create_run(
+                    thread_id,
+                    assistant_id=assistant_id,
+                    model=model,
+                    instructions=instructions,
+                    additional_instructions=additional_instructions,
+                    additional_messages=additional_messages,
+                    tools=tools,
+                    stream_parameter=False,
+                    stream=False,
+                    temperature=temperature,
+                    top_p=top_p,
+                    max_prompt_tokens=max_prompt_tokens,
+                    max_completion_tokens=max_completion_tokens,
+                    truncation_strategy=truncation_strategy,
+                    tool_choice=tool_choice,
+                    response_format=response_format,
+                    metadata=metadata,
+                    **kwargs,
+                )
 
-        else:
-            raise ValueError("Invalid combination of arguments provided.")
+            elif isinstance(body, io.IOBase):  # Handle overload with binary body.
+                content_type = kwargs.get("content_type", "application/json")
+                response = super().create_run(thread_id, body, content_type=content_type, **kwargs)
 
-        # If streaming is enabled, return the custom stream object
-        return response
+                if span:
+                    set_end_run(span, response)
+
+            else:
+                raise ValueError("Invalid combination of arguments provided.")
+
+            # If streaming is enabled, return the custom stream object
+            return response
 
     def create_and_process_run(
         self,
@@ -832,13 +865,21 @@ class AgentsOperations(AgentsOperationsGenerated):
         :raises ~azure.core.exceptions.HttpResponseError:
         """
 
-        # TODO: will it be closed when scope ends? We need to keep it alive for streaming
-        with _start_run_span("thread_run", thread_id, assistant_id, model, instructions, additional_instructions,
-                            temperature, top_p, max_prompt_tokens, max_completion_tokens) as span:
-
-            if span is not None:
-                event_handler = EventHandlerWrapper(event_handler, span)
-
+        with start_thread_run_span(
+            _OperationName.THREAD_RUN,
+            self._config,
+            thread_id,
+            assistant_id,
+            model=model,
+            instructions=instructions,
+            additional_instructions=additional_instructions,
+            additional_messages=additional_messages,
+            temperature=temperature,
+            tools=tools,
+            top_p=top_p,
+            max_prompt_tokens=max_prompt_tokens,
+            max_completion_tokens=max_completion_tokens,
+            response_format=response_format) as span:
             # Create and initiate the run with additional parameters
             run = self.create_run(
                 thread_id=thread_id,
@@ -881,13 +922,13 @@ class AgentsOperations(AgentsOperationsGenerated):
                     if tool_outputs:
                         for tool_output in tool_outputs:
                             # TODO if content enabled
-                            span.add_event("gen_ai.tool.message", {"gen_ai.event.content": json.dumps({"content": tool_output["output"], "id": tool_output["tool_call_id"]})} )
+                            span.span_instance.add_event("gen_ai.tool.message", {"gen_ai.event.content": json.dumps({"content": tool_output["output"], "id": tool_output["tool_call_id"]})} )
 
                         self.submit_tool_outputs_to_run(thread_id=thread_id, run_id=run.id, tool_outputs=tool_outputs)
 
                 logging.info("Current run status: %s", run.status)
 
-            _set_end_run(span, run)
+            set_end_run(span, run)
             return run
 
     @overload
@@ -1026,7 +1067,6 @@ class AgentsOperations(AgentsOperationsGenerated):
         :raises ~azure.core.exceptions.HttpResponseError:
         """
 
-    @distributed_trace
     def create_stream(
         self,
         thread_id: str,
@@ -1125,42 +1165,61 @@ class AgentsOperations(AgentsOperationsGenerated):
         :raises ~azure.core.exceptions.HttpResponseError:
         """
 
-        if isinstance(body, dict):  # Handle overload with JSON body.
-            content_type = kwargs.get("content_type", "application/json")
-            response = super().create_run(thread_id, body, content_type=content_type, **kwargs)
+        span = start_thread_run_span(
+            _OperationName.THREAD_RUN,
+            self._config,
+            thread_id,
+            assistant_id,
+            model=model,
+            instructions=instructions,
+            additional_instructions=additional_instructions,
+            additional_messages=additional_messages,
+            temperature=temperature,
+            tools=tools,
+            top_p=top_p,
+            max_prompt_tokens=max_prompt_tokens,
+            max_completion_tokens=max_completion_tokens,
+            response_format=response_format)
 
-        elif assistant_id is not _Unset:  # Handle overload with keyword arguments.
-            response = super().create_run(
-                thread_id,
-                assistant_id=assistant_id,
-                model=model,
-                instructions=instructions,
-                additional_instructions=additional_instructions,
-                additional_messages=additional_messages,
-                tools=tools,
-                stream_parameter=True,
-                stream=True,
-                temperature=temperature,
-                top_p=top_p,
-                max_prompt_tokens=max_prompt_tokens,
-                max_completion_tokens=max_completion_tokens,
-                truncation_strategy=truncation_strategy,
-                tool_choice=tool_choice,
-                response_format=response_format,
-                metadata=metadata,
-                **kwargs,
-            )
+        # TODO: how to keep span active in the current context without existing?
+        # TODO: dummy span for none
+        with span.change_context(span):
+            if isinstance(body, dict):  # Handle overload with JSON body.
+                content_type = kwargs.get("content_type", "application/json")
+                response = super().create_run(thread_id, body, content_type=content_type, **kwargs)
 
-        elif isinstance(body, io.IOBase):  # Handle overload with binary body.
-            content_type = kwargs.get("content_type", "application/json")
-            response = super().create_run(thread_id, body, content_type=content_type, **kwargs)
+            elif assistant_id is not _Unset:  # Handle overload with keyword arguments.
+                response = super().create_run(
+                    thread_id,
+                    assistant_id=assistant_id,
+                    model=model,
+                    instructions=instructions,
+                    additional_instructions=additional_instructions,
+                    additional_messages=additional_messages,
+                    tools=tools,
+                    stream_parameter=True,
+                    stream=True,
+                    temperature=temperature,
+                    top_p=top_p,
+                    max_prompt_tokens=max_prompt_tokens,
+                    max_completion_tokens=max_completion_tokens,
+                    truncation_strategy=truncation_strategy,
+                    tool_choice=tool_choice,
+                    response_format=response_format,
+                    metadata=metadata,
+                    **kwargs,
+                )
 
-        else:
-            raise ValueError("Invalid combination of arguments provided.")
+            elif isinstance(body, io.IOBase):  # Handle overload with binary body.
+                content_type = kwargs.get("content_type", "application/json")
+                response = super().create_run(thread_id, body, content_type=content_type, **kwargs)
 
-        response_iterator: Iterator[bytes] = cast(Iterator[bytes], response)
+            else:
+                raise ValueError("Invalid combination of arguments provided.")
 
-        return _models.AgentRunStream(response_iterator, self._handle_submit_tool_outputs, event_handler)
+            response_iterator: Iterator[bytes] = cast(Iterator[bytes], response)
+
+            return _models.AgentRunStream(response_iterator, self._handle_submit_tool_outputs, wrap_handler(event_handler, span))
 
     @overload
     def submit_tool_outputs_to_run(
@@ -1801,133 +1860,3 @@ def patch_sdk():
     you can't accomplish using the techniques described in
     https://aka.ms/azsdk/python/dpcodegen/python/customize
     """
-
-
-def _start_run_span(
-    operation_name: str,
-    thread_id: str,
-    assistant_id: str,
-    model: str,
-    instructions: str,
-    additional_instructions: str,
-    additional_messages,
-    temperature: float,
-    top_p: float,
-    max_prompt_tokens: int,
-    max_completion_tokens: int
-):
-    span_impl_type = settings.tracing_implementation()
-    if span_impl_type is None:
-        return None
-
-    span = span_impl_type(name=operation_name, kind=SpanKind.CLIENT)
-    _set_run_start_attributes(span, operation_name, assistant_id, thread_id, model, temperature, top_p, max_prompt_tokens, max_completion_tokens)
-    _add_instructions_event(span, instructions, additional_instructions)
-
-
-    if additional_messages:
-        for message in additional_messages:
-            _add_message_event(span, message)
-    return span
-
-def _set_end_run(span, run):
-    span.set_attribute("gen_ai.thread.run.status", run.status)
-    if run.usage:
-        span.set_attribute("gen_ai.response.input_tokens", run.usage.prompt_tokens)
-        span.set_attribute("gen_ai.response.output_tokens", run.usage.completion_tokens)
-
-def _set_run_start_attributes(span, operation_name, thread_id, agent_id, model, temperature, top_p, max_prompt_tokens, max_completion_tokens):
-    if thread_id:
-        span.add_attribute("gen_ai.thread.id", thread_id)
-
-    if agent_id:
-        span.add_attribute("gen_ai.agent.id", agent_id)
-
-    if model:
-        span.add_attribute("gen_ai.request.model", model)
-
-    if operation_name:
-        span.add_attribute("gen_ai.operation.name", operation_name)
-
-    if temperature:
-        span.add_attribute("gen_ai.request.temperature", temperature)
-
-    if top_p:
-        span.add_attribute("gen_ai.request.top_p", top_p)
-
-    if max_prompt_tokens:
-        span.add_attribute("gen_ai.request.max_input_tokens", max_prompt_tokens)
-
-    if max_completion_tokens:
-        span.add_attribute("gen_ai.request.max_output_tokens", max_completion_tokens)
-
-    span.add_attribute("gen_ai.system", "azure.ai.inference")
-    span.add_attribute("server.address", "TODO")
-
-def _add_instructions_event(span, instructions: str, additional_instructions: str):
-    attributes = {
-        "gen_ai.system": "azure.ai.inference",
-        "gen_ai.event.content": {"content", instructions + ", " + additional_instructions}, # TODO
-    }
-    span.add_event(name=f"gen_ai.system.message", attributes=attributes)
-
-def _add_message_event(span, message: _models.ThreadMessage):
-    # TODO if content enabled and document new attributes
-    event_body = {"content": message.content, "attachments": message.attachments, "details": message.incomplete_details}
-    # TODO update attributes in semconv
-    attributes = {
-        "gen_ai.system": "azure.ai.inference",
-        "gen_ai.message.id": message.id,
-        "gen_ai.message.status": message.status,
-        "gen_ai.thread.id": message.thread_id,
-        "gen_ai.agent.id": message.assistant_id,
-        "gen_ai.thread.run.id": message.run_id,
-        "gen_ai.event.content": json.dumps(event_body)
-    }
-    span.add_event(name=f"gen_ai.{message.role}.message", attributes=attributes)
-
-class EventHandlerWrapper(_models.AgentEventHandler):
-    def __init__(self, inner_handler, span):
-        super().__init__()
-        self.span = span
-        self.inner_handler = inner_handler
-
-    def on_message_delta(self, delta: "MessageDeltaChunk") -> None:
-        if self.inner_handler:
-            self.inner_handler.on_message_delta(delta)
-
-    def on_thread_message(self, message: "ThreadMessage") -> None:
-        if self.inner_handler:
-            self.inner_handler.on_thread_message(message)
-        if message.status == "completed" or message.status == "incomplete":
-            _add_message_event(self.span, message)
-
-    def on_thread_run(self, run: "ThreadRun") -> None:
-        if self.inner_handler:
-            self.inner_handler.on_thread_run(run)
-        # TODO: is it possible that it's called before run has ended?
-        # TODO: make use of last error?
-        _set_end_run(self.span, run)
-
-    def on_run_step(self, step: "RunStep") -> None:
-        if self.inner_handler:
-            self.inner_handler.on_run_step(step)
-
-    def on_run_step_delta(self, delta: "RunStepDeltaChunk") -> None:
-        if self.inner_handler:
-            self.inner_handler.on_run_step_delta(delta)
-
-    def on_error(self, data: str) -> None:
-        if self.inner_handler:
-            self.inner_handler.on_error(data)
-        # TODO how can we get error type or any other useful information?
-        self.span.__exit__("TODO")
-
-    def on_done(self) -> None:
-        if self.inner_handler:
-            self.inner_handler.on_done()
-        self.span.end()
-
-    def on_unhandled_event(self, event_type: str, event_data: Any) -> None:
-        if self.inner_handler:
-            self.inner_handler.on_unhandled_event(event_type, event_data)

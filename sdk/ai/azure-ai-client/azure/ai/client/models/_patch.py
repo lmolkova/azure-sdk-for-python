@@ -14,8 +14,6 @@ import base64
 import asyncio
 
 from azure.core.credentials import TokenCredential, AccessToken
-from azure.core.tracing import SpanKind  # type: ignore
-from azure.core.settings import settings  # type: ignore
 
 from ._enums import AgentStreamEvent
 from ._models import (
@@ -482,14 +480,10 @@ class ToolSet:
                 if tool_call.type == "function":
                     tool = self.get_tool(FunctionTool)
 
-                    with _trace_tool_execution(
-                        operation_name="execute_tool",
+                    with azure.ai.client._instrumentation._agent_instrumentation.trace_tool_execution(
                         tool_call_id=tool_call.id,
-                        tool_name=tool_call.function.name,
-                        thread_id="TODO", # TODO: would be nice to have this, but need to propagate
-                        run_id="TODO", # TODO: nice to have
-                        agent_id="TODO", # TODO: nice to have
-                    ) as span:
+                        tool_name=tool_call.function.name
+                    ):
                         # TODO: add span event with arguments ? it's already available on the assistant message, but here they are parsed
                         # TODO: add attributes with specific function resources (vector store, etc)
                         output = tool.execute(tool_call)
@@ -504,31 +498,6 @@ class ToolSet:
                 logging.error(f"Failed to execute tool call {tool_call}: {e}")
 
         return tool_outputs
-
-def _trace_tool_execution(
-    operation_name,
-    tool_call_id,
-    tool_name,
-    thread_id=None,
-    agent_id=None,
-    run_id=None,
-):
-    span_impl_type = settings.tracing_implementation()
-    if span_impl_type is None:
-        return None
-
-    span = span_impl_type(name=tool_name, kind=SpanKind.INTERNAL)
-
-    span.add_attribute("gen_ai.tool.call.id", tool_call_id)
-    span.add_attribute("gen_ai.tool.name", tool_name)
-    span.add_attribute("gen_ai.operation.name", operation_name)
-    if thread_id:
-        span.add_attribute("gen_ai.thread.id", thread_id)
-    if agent_id:
-        span.add_attribute("gen_ai.agent.id", agent_id)
-    if run_id:
-        span.add_attribute("gen_ai.thread.run.id", run_id)
-    return span
 
 class AsyncToolSet(ToolSet):
 
@@ -650,7 +619,7 @@ class AsyncAgentRunStream(AsyncIterator[Tuple[str, Any]]):
         self.event_handler = event_handler
         self.done = False
         self.buffer = ""
-        self.submit_tool_outputs = submit_tool_outputs        
+        self.submit_tool_outputs = submit_tool_outputs
 
     async def __aenter__(self):
         return self
@@ -746,7 +715,7 @@ class AsyncAgentRunStream(AsyncIterator[Tuple[str, Any]]):
         event_type, event_data_obj = self._parse_event_data(event_data_str)
 
         if isinstance(event_data_obj, ThreadRun) and event_data_obj.status == "requires_action" and isinstance(event_data_obj.required_action, SubmitToolOutputsAction):
-            await self.submit_tool_outputs(event_data_obj, self.event_handler)  
+            await self.submit_tool_outputs(event_data_obj, self.event_handler)
         if self.event_handler:
             try:
                 if isinstance(event_data_obj, MessageDeltaChunk):
@@ -889,7 +858,7 @@ class AgentRunStream(Iterator[Tuple[str, Any]]):
         event_type, event_data_obj = self._parse_event_data(event_data_str)
 
         if isinstance(event_data_obj, ThreadRun) and event_data_obj.status == "requires_action" and isinstance(event_data_obj.required_action, SubmitToolOutputsAction):
-            self.submit_tool_outputs(event_data_obj, self.event_handler)  
+            self.submit_tool_outputs(event_data_obj, self.event_handler)
         if self.event_handler:
             try:
                 if isinstance(event_data_obj, MessageDeltaChunk):
