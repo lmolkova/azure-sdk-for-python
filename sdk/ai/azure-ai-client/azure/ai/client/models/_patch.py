@@ -12,7 +12,9 @@ import json
 import logging
 import base64
 import asyncio
+import traceback
 
+from azure.ai.client._instrumentation._utils import trace_tool_execution
 from azure.core.credentials import TokenCredential, AccessToken
 
 from ._enums import AgentStreamEvent
@@ -480,18 +482,16 @@ class ToolSet:
                 if tool_call.type == "function":
                     tool = self.get_tool(FunctionTool)
 
-                    with azure.ai.client._instrumentation._agent_instrumentation.trace_tool_execution(
+                    with trace_tool_execution(
                         tool_call_id=tool_call.id,
                         tool_name=tool_call.function.name
                     ):
-                        # TODO: add span event with arguments ? it's already available on the assistant message, but here they are parsed
                         # TODO: add attributes with specific function resources (vector store, etc)
                         output = tool.execute(tool_call)
                         tool_output = {
                             "tool_call_id": tool_call.id,
                             "output": output,
                         }
-                        # TODO: add span event with outputs
 
                     tool_outputs.append(tool_output)
             except Exception as e:
@@ -526,11 +526,18 @@ class AsyncToolSet(ToolSet):
             try:
                 if tool_call.type == "function":
                     tool = self.get_tool(AsyncFunctionTool)
-                    output = await tool.execute(tool_call)
-                    tool_output = {
-                        "tool_call_id": tool_call.id,
-                        "output": output,
-                    }
+
+                    with trace_tool_execution(
+                        tool_call_id=tool_call.id,
+                        tool_name=tool_call.function.name
+                    ):
+                        # TODO: add attributes with specific function resources (vector store, etc)
+
+                        output = await tool.execute(tool_call)
+                        tool_output = {
+                            "tool_call_id": tool_call.id,
+                            "output": output,
+                        }
                     tool_outputs.append(tool_output)
             except Exception as e:
                 logging.error(f"Failed to execute tool call {tool_call}: {e}")
@@ -771,6 +778,11 @@ class AgentRunStream(Iterator[Tuple[str, Any]]):
         close_method = getattr(self.response_iterator, "close", None)
         if callable(close_method):
             close_method()
+
+        # TODO: is it a good idea?
+        # if not, we'll need to wrap stream and call exit
+        if self.event_handler and self.event_handler.__class__.__name__ == "_EventHandlerWrapper":
+            self.event_handler.__exit__(exc_type, exc_val, exc_tb)
 
     def __iter__(self):
         return self

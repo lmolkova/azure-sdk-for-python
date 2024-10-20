@@ -13,7 +13,8 @@ import sys, io, logging, os, time
 from io import IOBase
 from typing import List, Iterable, Union, IO, Any, Dict, Optional, overload, TYPE_CHECKING, Iterator, cast
 
-from azure.ai.client._instrumentation._agent_instrumentation import _GEN_AI_AGENT_ID, _OperationName, set_end_run, start_create_agent_span, start_thread_run_span, wrap_handler
+from azure.ai.client._instrumentation._agent_instrumentation import set_end_run, start_create_agent_span, start_submit_tool_output_span, start_thread_run_span, wrap_handler
+from azure.ai.client._instrumentation._utils import GEN_AI_AGENT_ID, OperationName
 
 # from zoneinfo import ZoneInfo
 from ._operations import EndpointsOperations as EndpointsOperationsGenerated
@@ -26,6 +27,7 @@ from .._vendor import FileType
 from .. import models as _models
 
 from azure.core.tracing.decorator import distributed_trace
+from azure.core.tracing import AbstractSpan
 
 if sys.version_info >= (3, 9):
     from collections.abc import MutableMapping
@@ -474,7 +476,7 @@ class AgentsOperations(AgentsOperationsGenerated):
             )
 
             if span:
-                span.add_attribute(_GEN_AI_AGENT_ID, agent.id)
+                span.add_attribute(GEN_AI_AGENT_ID, agent.id)
 
             return agent
 
@@ -715,7 +717,7 @@ class AgentsOperations(AgentsOperationsGenerated):
         :raises ~azure.core.exceptions.HttpResponseError:
         """
 
-        with start_thread_run_span(_OperationName.CREATE_THREAD_RUN,
+        with start_thread_run_span(OperationName.CREATE_THREAD_RUN,
             self._config,
             thread_id,
             assistant_id,
@@ -866,7 +868,7 @@ class AgentsOperations(AgentsOperationsGenerated):
         """
 
         with start_thread_run_span(
-            _OperationName.THREAD_RUN,
+            OperationName.THREAD_RUN,
             self._config,
             thread_id,
             assistant_id,
@@ -920,10 +922,6 @@ class AgentsOperations(AgentsOperationsGenerated):
 
                     logging.info("Tool outputs: %s", tool_outputs)
                     if tool_outputs:
-                        for tool_output in tool_outputs:
-                            # TODO if content enabled
-                            span.span_instance.add_event("gen_ai.tool.message", {"gen_ai.event.content": json.dumps({"content": tool_output["output"], "id": tool_output["tool_call_id"]})} )
-
                         self.submit_tool_outputs_to_run(thread_id=thread_id, run_id=run.id, tool_outputs=tool_outputs)
 
                 logging.info("Current run status: %s", run.status)
@@ -1166,7 +1164,7 @@ class AgentsOperations(AgentsOperationsGenerated):
         """
 
         span = start_thread_run_span(
-            _OperationName.THREAD_RUN,
+            OperationName.THREAD_RUN,
             self._config,
             thread_id,
             assistant_id,
@@ -1183,7 +1181,8 @@ class AgentsOperations(AgentsOperationsGenerated):
 
         # TODO: how to keep span active in the current context without existing?
         # TODO: dummy span for none
-        with span.change_context(span):
+        with span.change_context(span.span_instance):
+
             if isinstance(body, dict):  # Handle overload with JSON body.
                 content_type = kwargs.get("content_type", "application/json")
                 response = super().create_run(thread_id, body, content_type=content_type, **kwargs)
@@ -1297,7 +1296,6 @@ class AgentsOperations(AgentsOperationsGenerated):
         :raises ~azure.core.exceptions.HttpResponseError:
         """
 
-    @distributed_trace
     def submit_tool_outputs_to_run(
         self,
         thread_id: str,
@@ -1327,23 +1325,31 @@ class AgentsOperations(AgentsOperationsGenerated):
         :raises ~azure.core.exceptions.HttpResponseError:
         """
 
-        if isinstance(body, dict):
-            content_type = kwargs.get("content_type", "application/json")
-            response = super().submit_tool_outputs_to_run(thread_id, run_id, body, content_type=content_type, **kwargs)
+        with start_submit_tool_output_span(self._config,
+                                        thread_id=thread_id,
+                                        run_id=run_id,
+                                        tool_outputs=tool_outputs,
+                                        event_handler=event_handler) as span:
 
-        elif tool_outputs is not _Unset:
-            response = super().submit_tool_outputs_to_run(
-                thread_id, run_id, tool_outputs=tool_outputs, stream_parameter=False, stream=False, **kwargs
-            )
+            if isinstance(body, dict):
+                content_type = kwargs.get("content_type", "application/json")
+                response = super().submit_tool_outputs_to_run(thread_id, run_id, body, content_type=content_type, **kwargs)
 
-        elif isinstance(body, io.IOBase):
-            content_type = kwargs.get("content_type", "application/json")
-            response = super().submit_tool_outputs_to_run(thread_id, run_id, body, content_type=content_type, **kwargs)
+            elif tool_outputs is not _Unset:
+                response = super().submit_tool_outputs_to_run(
+                    thread_id, run_id, tool_outputs=tool_outputs, stream_parameter=False, stream=False, **kwargs
+                )
 
-        else:
-            raise ValueError("Invalid combination of arguments provided.")
+            elif isinstance(body, io.IOBase):
+                content_type = kwargs.get("content_type", "application/json")
+                response = super().submit_tool_outputs_to_run(thread_id, run_id, body, content_type=content_type, **kwargs)
+
+            else:
+                raise ValueError("Invalid combination of arguments provided.")
 
         # If streaming is enabled, return the custom stream object
+        if span:
+            set_end_run(span, response)
         return response
 
     @overload
@@ -1422,7 +1428,6 @@ class AgentsOperations(AgentsOperationsGenerated):
         :raises ~azure.core.exceptions.HttpResponseError:
         """
 
-    @distributed_trace
     def submit_tool_outputs_to_stream(
         self,
         thread_id: str,
@@ -1452,50 +1457,58 @@ class AgentsOperations(AgentsOperationsGenerated):
         :raises ~azure.core.exceptions.HttpResponseError:
         """
 
-        if isinstance(body, dict):
-            content_type = kwargs.get("content_type", "application/json")
-            response = super().submit_tool_outputs_to_run(thread_id, run_id, body, content_type=content_type, **kwargs)
+        with start_submit_tool_output_span(self._config,
+                                        thread_id,
+                                        run_id=run_id,
+                                        tool_outputs=tool_outputs,
+                                        event_handler=event_handler) as span:
+            if isinstance(body, dict):
+                content_type = kwargs.get("content_type", "application/json")
+                response = super().submit_tool_outputs_to_run(thread_id, run_id, body, content_type=content_type, **kwargs)
 
-        elif tool_outputs is not _Unset:
-            response = super().submit_tool_outputs_to_run(
-                thread_id, run_id, tool_outputs=tool_outputs, stream_parameter=True, stream=True, **kwargs
-            )
+            elif tool_outputs is not _Unset:
+                response = super().submit_tool_outputs_to_run(
+                    thread_id, run_id, tool_outputs=tool_outputs, stream_parameter=True, stream=True, **kwargs
+                )
 
-        elif isinstance(body, io.IOBase):
-            content_type = kwargs.get("content_type", "application/json")
-            response = super().submit_tool_outputs_to_run(thread_id, run_id, body, content_type=content_type, **kwargs)
+            elif isinstance(body, io.IOBase):
+                content_type = kwargs.get("content_type", "application/json")
+                response = super().submit_tool_outputs_to_run(thread_id, run_id, body, content_type=content_type, **kwargs)
 
-        else:
-            raise ValueError("Invalid combination of arguments provided.")
+            else:
+                raise ValueError("Invalid combination of arguments provided.")
 
-        # Cast the response to Iterator[bytes] for type correctness
-        response_iterator: Iterator[bytes] = cast(Iterator[bytes], response)
+            # Cast the response to Iterator[bytes] for type correctness
+            response_iterator: Iterator[bytes] = cast(Iterator[bytes], response)
 
-        return _models.AgentRunStream(response_iterator, self._handle_submit_tool_outputs, event_handler)
+        return _models.AgentRunStream(response_iterator, self._handle_submit_tool_outputs, wrap_handler(event_handler, span))
 
     def _handle_submit_tool_outputs(self, run: _models.ThreadRun, event_handler: Optional[_models.AgentEventHandler] = None) -> None:
-        if isinstance(run.required_action, _models.SubmitToolOutputsAction):
-            tool_calls = run.required_action.submit_tool_outputs.tool_calls
-            if not tool_calls:
-                logger.debug("No tool calls to execute.")
-                return
+        # TODO: is it a good idea ?
+        run_span = getattr(event_handler, "span", None)
+        with run_span.change_context(run_span.span_instance):
+            if isinstance(run.required_action, _models.SubmitToolOutputsAction):
+                tool_calls = run.required_action.submit_tool_outputs.tool_calls
+                if not tool_calls:
+                    logger.debug("No tool calls to execute.")
+                    return
 
-            toolset = self.get_toolset()
-            if toolset:
-                tool_outputs = toolset.execute_tool_calls(tool_calls)
-            else:
-                logger.warning("Toolset is not available in the client.")
-                return
+                toolset = self.get_toolset()
+                if toolset:
+                    tool_outputs = toolset.execute_tool_calls(tool_calls)
+                else:
+                    logger.warning("Toolset is not available in the client.")
+                    return
 
-            logger.info(f"Tool outputs: {tool_outputs}")
-            if tool_outputs:
-                with self.submit_tool_outputs_to_stream(
-                    thread_id=run.thread_id,
-                    run_id=run.id,
-                    tool_outputs=tool_outputs,
-                    event_handler=event_handler
-            ) as stream:
-                    stream.until_done()
+                logger.info(f"Tool outputs: {tool_outputs}")
+                if tool_outputs:
+                    with self.submit_tool_outputs_to_stream(
+                        thread_id=run.thread_id,
+                        run_id=run.id,
+                        tool_outputs=tool_outputs,
+                        event_handler=event_handler
+                ) as stream:
+                        stream.until_done()
 
     @overload
     def upload_file(self, body: JSON, **kwargs: Any) -> _models.OpenAIFile:

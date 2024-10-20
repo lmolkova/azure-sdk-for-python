@@ -110,10 +110,10 @@ with ai_client:
 
             elif isinstance(event_data, ThreadRun):
                 print(f"ThreadRun status: {event_data.status}")
-                
+
                 if event_data.status == "failed":
                     print(f"Run failed. Error: {event_data.last_error}")
-                           
+
             elif isinstance(event_data, RunStep):
                 print(f"RunStep type: {event_data.type}, Status: {event_data.status}")
 

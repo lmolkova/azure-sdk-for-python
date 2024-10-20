@@ -12,7 +12,8 @@ import sys
 from typing import Any, Callable, Dict, IO, Iterable, List, Optional, TYPE_CHECKING, TypeVar, Union, overload
 import urllib.parse
 
-from azure.ai.client._instrumentation._agent_instrumentation import _GEN_AI_MESSAGE_ID, _GEN_AI_THREAD_ID, start_create_message_span, start_create_thread_span
+from azure.ai.client._instrumentation._agent_instrumentation import start_create_message_span, start_create_thread_span
+from azure.ai.client._instrumentation._utils import GEN_AI_MESSAGE_ID, GEN_AI_THREAD_ID
 from azure.core.exceptions import (
     ClientAuthenticationError,
     HttpResponseError,
@@ -2296,7 +2297,7 @@ class AgentsOperations:  # pylint: disable=too-many-public-methods
                 deserialized = _deserialize(_models.AgentThread, response.json())
 
             if span:
-                span.add_attribute(_GEN_AI_THREAD_ID, deserialized.get("id"))
+                span.add_attribute(GEN_AI_THREAD_ID, deserialized.get("id"))
 
             if cls:
                 return cls(pipeline_response, deserialized, {})  # type: ignore
@@ -2795,7 +2796,7 @@ class AgentsOperations:  # pylint: disable=too-many-public-methods
                 deserialized = _deserialize(_models.ThreadMessage, response.json())
 
             if span:
-                span.add_attribute(_GEN_AI_MESSAGE_ID, deserialized.get("id"))
+                span.add_attribute(GEN_AI_MESSAGE_ID, deserialized.get("id"))
 
             if cls:
                 return cls(pipeline_response, deserialized, {})  # type: ignore

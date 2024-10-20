@@ -78,7 +78,7 @@ class MyEventHandler(AgentEventHandler):
             print(f"Run failed. Error: {run.last_error}")
 
     def on_run_step(self, step: "RunStep") -> None:
-        print(f"RunStep type: {step.type}, Status: {step.status}")
+        print(f"RunStep type: {step.type}, Status: {step.status}\nContent: {step.as_dict()}")
 
     def on_error(self, data: str) -> None:
         print(f"An error occurred. Data: {data}")

@@ -1070,7 +1070,7 @@ class AgentsOperations(AgentsOperationsGenerated):
 
         else:
             raise ValueError("Invalid combination of arguments provided.")
-        
+
         response_iterator: AsyncIterator[bytes] = cast(AsyncIterator[bytes], await response)
 
         return _models.AsyncAgentRunStream(response_iterator, self._handle_submit_tool_outputs, event_handler)
@@ -1326,7 +1326,7 @@ class AgentsOperations(AgentsOperationsGenerated):
         response_iterator: AsyncIterator[bytes] = cast(AsyncIterator[bytes], await response)
 
         return _models.AsyncAgentRunStream(response_iterator, self._handle_submit_tool_outputs, event_handler)
-    
+
     async def _handle_submit_tool_outputs(self, run: _models.ThreadRun, event_handler: Optional[_models.AsyncAgentEventHandler] = None) -> None:
         if isinstance(run.required_action, _models.SubmitToolOutputsAction):
             tool_calls = run.required_action.submit_tool_outputs.tool_calls
@@ -1339,16 +1339,16 @@ class AgentsOperations(AgentsOperationsGenerated):
                 tool_outputs = await toolset.execute_tool_calls(tool_calls)
             else:
                 raise ValueError("Toolset is not available in the client.")
-            
+
             logger.info(f"Tool outputs: {tool_outputs}")
             if tool_outputs:
                 async with await self.submit_tool_outputs_to_stream(
-                    thread_id=run.thread_id, 
-                    run_id=run.id, 
-                    tool_outputs=tool_outputs, 
+                    thread_id=run.thread_id,
+                    run_id=run.id,
+                    tool_outputs=tool_outputs,
                     event_handler=event_handler
             ) as stream:
-                    await stream.until_done()    
+                    await stream.until_done()
 
     @overload
     async def upload_file(self, body: JSON, **kwargs: Any) -> _models.OpenAIFile:
@@ -1553,7 +1553,7 @@ class AgentsOperations(AgentsOperationsGenerated):
             uploaded_file = await self.get_file(uploaded_file.id)
 
         return uploaded_file
-   
+
     @overload
     async def create_vector_store_and_poll(
         self, body: JSON, *, content_type: str = "application/json", sleep_interval: float = 1, **kwargs: Any
@@ -1673,7 +1673,7 @@ class AgentsOperations(AgentsOperationsGenerated):
         :rtype: ~azure.ai.client.models.VectorStore
         :raises ~azure.core.exceptions.HttpResponseError:
         """
-        
+
         if body is not None:
             vector_store = await self.create_vector_store(body=body, content_type=content_type, **kwargs)
         elif file_ids is not None or (name is not None and expires_after is not None):
